@@ -1,0 +1,14 @@
+[Unit]
+Description=Yuvaan Rover Main Controller
+After=network.target
+
+[Service]
+# Adjust 'yuvaan' to your actual Pi username if different
+User=yuvaan
+WorkingDirectory=/home/yuvaan/rover
+ExecStart=/usr/bin/python3 /home/yuvaan/rover/core/bridge.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
