@@ -3,3 +3,4 @@ uvicorn
 pydantic
 requests
 websockets
+mpu9250-jmdev
