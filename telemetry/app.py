@@ -8,6 +8,8 @@ import sys
 import logging
 import time
 from datetime import datetime
+from fastapi.responses import StreamingResponse
+from perception.camera_engine import get_camera
 
 # ---------------------------------------------------------
 # YUVAAN ROVER TELEMETRY BACKEND (Run this on the Pi 5)
@@ -84,9 +86,11 @@ async def websocket_imu_endpoint(websocket: WebSocket):
     try:
         while True:
             # Push live data at 10 Hz — include server timestamp for latency calc
+            camera = get_camera()
             payload = {
                 **current_imu_data,
-                "server_ts": int(time.time() * 1000)  # Unix ms
+                "server_ts": int(time.time() * 1000),  # Unix ms
+                "detections": camera.detection_results
             }
             await websocket.send_text(json.dumps(payload))
             await asyncio.sleep(0.1)
@@ -116,6 +120,21 @@ async def health():
         "clients": len(connected_clients),
         "imu": current_imu_data
     }
+
+def gen_frames():
+    camera = get_camera()
+    while True:
+        frame = camera.get_frame()
+        if frame:
+            yield (b'--frame\r\n'
+                   b'Content-Type: image/jpeg\r\n\r\n' + frame + b'\r\n')
+        else:
+            time.sleep(0.1)
+
+@app.get("/api/video_feed")
+async def video_feed():
+    """Serves the MJPEG video stream from the Pi camera."""
+    return StreamingResponse(gen_frames(), media_type="multipart/x-mixed-replace; boundary=frame")
 
 
 if __name__ == "__main__":

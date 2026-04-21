@@ -5,6 +5,8 @@
 fastapi
 uvicorn[standard]
 pydantic
+opencv-python-headless
+picamera2
 
 # HTTP client (used by imu_feed.py to POST to local FastAPI)
 requests
