@@ -1,6 +1,17 @@
+# YUVAAN ROVER — Pi Dependencies
+# Install with: pip install -r requirements.txt
+
+# Web framework & server
 fastapi
-uvicorn
+uvicorn[standard]
 pydantic
+
+# HTTP client (used by imu_feed.py to POST to local FastAPI)
 requests
+
+# WebSocket support
 websockets
-mpu9250-jmdev
+
+# I2C hardware access — used by drivers/imu_sensor.py (MPU9250)
+# NOTE: We use our OWN driver (smbus2), NOT mpu9250-jmdev
+smbus2
