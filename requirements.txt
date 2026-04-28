@@ -1,19 +1,36 @@
 # YUVAAN ROVER — Pi Dependencies
 # Install with: pip install -r requirements.txt
+#
+# NOTE: picamera2 and OpenCV must be installed via apt, NOT pip:
+#   sudo apt install -y python3-picamera2 python3-opencv imx500-models
+#   (these are system packages that link against libcamera)
+#   imx500-models provides the .rpk neural network files for the IMX500 NPU
+#
+# Then install the rest with pip inside your venv:
+#   pip install -r requirements.txt
 
 # Web framework & server
 fastapi
 uvicorn[standard]
 pydantic
-opencv-python-headless
-picamera2
 
-# HTTP client (used by imu_feed.py to POST to local FastAPI)
+# HTTP client — used by camera_engine.py to POST detections to the API
+# and by imu_service.py to POST IMU data to the API
 requests
 
 # WebSocket support
 websockets
 
-# I2C hardware access — used by drivers/imu_sensor.py (MPU9250)
+# I2C hardware access — used by drivers/imu.py (MPU9250)
 # NOTE: We use our OWN driver (smbus2), NOT mpu9250-jmdev
 smbus2
+
+# Serial port — used by drivers/gps_module.py (retained for legacy, added pynmea2)
+pyserial
+pynmea2
+
+# OpenCV (headless, no GUI) — for AI inference in perception/object_detect.py
+# NOTE: If using system OpenCV from apt, you can skip this:
+#   sudo apt install python3-opencv
+# Only add below if NOT using the system apt package:
+# opencv-python-headless

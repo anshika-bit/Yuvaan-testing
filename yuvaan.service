@@ -1,0 +1,20 @@
+[Unit]
+Description=Yuvaan Rover Master Controller
+After=network.target
+
+[Service]
+# Change this to your actual pi username if different
+User=pi
+WorkingDirectory=/home/pi/Yuvaan-testing
+ExecStart=/usr/bin/python3 /home/pi/Yuvaan-testing/main.py
+
+# Automatically restart if the service crashes
+Restart=always
+RestartSec=5
+
+# Logging for journalctl
+StandardOutput=inherit
+StandardError=inherit
+
+[Install]
+WantedBy=multi-user.target

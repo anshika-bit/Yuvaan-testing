@@ -30,10 +30,11 @@ def _parse_nmea_gga(sentence: str) -> dict | None:
         lng_raw = parts[4]
         lng_dir = parts[5]
         fix_quality = int(parts[6]) if parts[6] else 0
+        num_sats = int(parts[7]) if parts[7] else 0
         alt = float(parts[9]) if parts[9] else 0.0
 
         if not lat_raw or not lng_raw:
-            return None
+            return {'lat': None, 'lng': None, 'alt': 0.0, 'fix': False, 'sats': num_sats}
 
         # Convert DDMM.MMMM to decimal degrees
         lat_deg = int(lat_raw[:2])
@@ -48,7 +49,7 @@ def _parse_nmea_gga(sentence: str) -> dict | None:
         if lng_dir == 'W':
             lng = -lng
 
-        return {'lat': round(lat, 6), 'lng': round(lng, 6), 'alt': round(alt, 1), 'fix': fix_quality > 0}
+        return {'lat': round(lat, 6), 'lng': round(lng, 6), 'alt': round(alt, 1), 'fix': fix_quality > 0, 'sats': num_sats}
 
     except Exception:
         return None
@@ -60,38 +61,54 @@ class GPSDriver:
     Data is accessible via the .read() method at any time.
     """
 
-    def __init__(self, port: str = '/dev/ttyUSB0', baud: int = 9600):
+    def __init__(self, port: str = '/dev/serial0', baud: int = 38400):
         self.port = port
         self.baud = baud
-        self._latest = {'lat': None, 'lng': None, 'alt': None, 'fix': False}
+        self.connected = False
+        self._latest = {'lat': None, 'lng': None, 'alt': None, 'fix': False, 'sats': 0}
         self._lock = threading.Lock()
         self._running = True
         self._thread = threading.Thread(target=self._read_loop, daemon=True)
         self._thread.start()
 
     def _read_loop(self):
-        try:
-            import serial
-            ser = serial.Serial(self.port, self.baud, timeout=1)
-            log.info(f"GPS: Connected on {self.port} at {self.baud} baud")
-            while self._running:
-                try:
-                    line = ser.readline().decode('ascii', errors='ignore').strip()
-                    if line.startswith(('$GPGGA', '$GNGGA')):
-                        parsed = _parse_nmea_gga(line)
-                        if parsed:
-                            with self._lock:
-                                self._latest = parsed
-                except Exception as e:
-                    log.warning(f"GPS read error: {e}")
-                    time.sleep(0.1)
-        except Exception as e:
-            log.error(f"GPS: Cannot open {self.port} — {e}")
+        while self._running:
+            try:
+                import serial
+                with serial.Serial(self.port, self.baud, timeout=1) as ser:
+                    self.connected = True
+                    log.info(f"GPS: Connected on {self.port} at {self.baud} baud")
+                    
+                    while self._running:
+                        try:
+                            line = ser.readline().decode('ascii', errors='ignore').strip()
+                            if line:
+                                log.debug(f"GPS RAW: {line}")
+                            
+                            if line.startswith(('$GPGGA', '$GNGGA')):
+                                log.debug(f"GPS GGA Sentence: {line}")
+                                parsed = _parse_nmea_gga(line)
+                                if parsed:
+                                    with self._lock:
+                                        self._latest = parsed
+                        except Exception as e:
+                            log.warning(f"GPS read error: {e}")
+                            self.connected = False
+                            break # Reconnect
+            except Exception as e:
+                if self.connected:
+                    log.error(f"GPS: Connection lost on {self.port} — {e}")
+                else:
+                    log.error(f"GPS: Failed to open {self.port} — {e}")
+                self.connected = False
+                time.sleep(5) # Wait before retry
 
     def read(self) -> dict:
-        """Returns latest GPS data: {'lat', 'lng', 'alt', 'fix'}"""
+        """Returns latest GPS data: {'lat', 'lng', 'alt', 'fix', 'connected'}"""
         with self._lock:
-            return self._latest.copy()
+            data = self._latest.copy()
+            data['connected'] = self.connected
+            return data
 
     def stop(self):
         self._running = False
@@ -101,7 +118,7 @@ class GPSDriver:
 _driver: GPSDriver | None = None
 
 
-def get_gps_driver(port: str = '/dev/ttyUSB0') -> GPSDriver:
+def get_gps_driver(port: str = '/dev/serial0') -> GPSDriver:
     global _driver
     if _driver is None:
         _driver = GPSDriver(port=port)
