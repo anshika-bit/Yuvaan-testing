@@ -16,6 +16,7 @@ _STATUS_TMP = "/tmp/yuvaan_camera_status.tmp.json"
 _JPEG_QUALITY = 70
 _STATUS_REFRESH_SECONDS = 1.0
 _DETECTIONS_PUSH_INTERVAL = 0.2
+_DETECTIONS_POST_TIMEOUT = 0.1
 
 class CameraEngine:
     """
@@ -113,7 +114,7 @@ class CameraEngine:
                         requests.post(
                             f"{self.api_base}/api/detections/update",
                             json={"detections": detections},
-                            timeout=0.02
+                            timeout=_DETECTIONS_POST_TIMEOUT
                         )
                     except Exception:
                         pass
