@@ -168,11 +168,9 @@ class CameraDriver:
                 continue
 
             try:
-                # Capture the frame (BGR numpy array)
-                frame = self._picam.capture_array()
-
-                # Capture metadata (contains NPU inference outputs)
-                metadata = self._picam.capture_metadata()
+                # Capture image data and metadata from the same request so
+                # the IMX500 inference results stay aligned with the frame.
+                (frame,), metadata = self._picam.capture_arrays(["main"])
 
                 # Parse detections from metadata
                 detections = self._parse_detections(metadata)
