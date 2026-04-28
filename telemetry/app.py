@@ -308,6 +308,7 @@ async def update_detections(data: dict):
     return {"status": "ok"}
 
 _FRAME_PATH = "/tmp/yuvaan_latest_frame.jpg"
+_CAMERA_STATUS_PATH = "/tmp/yuvaan_camera_status.json"
 
 # 1x1 black JPEG — smallest valid image that triggers browser <img> onLoad.
 # This breaks the "infinite connecting" state when no camera frames exist.
@@ -384,15 +385,45 @@ def _read_frame_file():
     with open(_FRAME_PATH, 'rb') as f:
         return f.read()
 
+def _read_camera_status_file():
+    if not os.path.isfile(_CAMERA_STATUS_PATH):
+        return None
+    try:
+        with open(_CAMERA_STATUS_PATH, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception as e:
+        return {"status": "error", "reason": "camera_status_unreadable", "detail": str(e)}
+
 @app.get("/api/camera/status")
 async def camera_status():
-    """Health endpoint: lets the frontend know if the camera pipeline is alive."""
-    if not os.path.isfile(_FRAME_PATH):
-        return {"status": "offline", "reason": "no_frame_file"}
-    age = time.time() - os.path.getmtime(_FRAME_PATH)
-    if age > 2.0:
-        return {"status": "stale", "age_seconds": round(age, 1)}
-    return {"status": "live", "age_seconds": round(age, 2)}
+    """Health endpoint: reports camera-engine state plus frame-file freshness."""
+    status_payload = _read_camera_status_file() or {}
+    frame_exists = os.path.isfile(_FRAME_PATH)
+    frame_age = None
+    if frame_exists:
+        frame_age = round(time.time() - os.path.getmtime(_FRAME_PATH), 2)
+
+    status_payload["frame_file_exists"] = frame_exists
+    if frame_age is not None:
+        status_payload["frame_age_seconds"] = frame_age
+
+    if not status_payload:
+        if not frame_exists:
+            return {"status": "offline", "reason": "no_frame_file", "frame_file_exists": False}
+        if frame_age is not None and frame_age > 2.0:
+            return {"status": "stale", "age_seconds": round(frame_age, 1), "frame_file_exists": True}
+        return {"status": "live", "age_seconds": round(frame_age, 2), "frame_file_exists": True}
+
+    if status_payload.get("status") == "live" and not frame_exists:
+        status_payload["status"] = "offline"
+        status_payload["reason"] = "status_live_but_no_frame_file"
+    elif frame_age is not None and frame_age > 2.0 and status_payload.get("status") == "live":
+        status_payload["status"] = "stale"
+        status_payload["reason"] = "stale_frame_file"
+    elif not frame_exists and "reason" not in status_payload:
+        status_payload["reason"] = "no_frame_file"
+
+    return status_payload
 
 @app.get("/api/video_feed")
 async def video_feed():

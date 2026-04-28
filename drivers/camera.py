@@ -45,6 +45,9 @@ class CameraDriver:
         self._picam = None
         self._imx500 = None
         self._intrinsics = None
+        self.initialized = False
+        self.last_error = None
+        self.first_frame_time = None
 
         self._init_hardware()
 
@@ -82,15 +85,19 @@ class CameraDriver:
 
             self._imx500.show_network_fw_progress_bar()
             self._picam.start(config)
+            self.initialized = True
+            self.last_error = None
 
             log.info("IMX500 Hardware AI Camera: INITIALIZED & ACTIVE")
             log.info(f"  Model: {os.path.basename(self.model_path)}")
             log.info(f"  Resolution: {self.width}x{self.height} @ 30fps")
 
         except ImportError as e:
+            self.last_error = str(e)
             log.error(f"IMX500 Import Failed (not on Pi?): {e}")
             self._picam = None
         except Exception as e:
+            self.last_error = str(e)
             log.error(f"IMX500 Initialization Failed: {e}")
             self._picam = None
 
@@ -171,8 +178,12 @@ class CameraDriver:
                 with self._lock:
                     self._latest_frame = frame
                     self._latest_dets = detections
+                    if self.first_frame_time is None:
+                        self.first_frame_time = time.time()
+                self.last_error = None
 
             except Exception as e:
+                self.last_error = str(e)
                 log.debug(f"Camera Loop Error: {e}")
                 time.sleep(0.01)
 

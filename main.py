@@ -310,7 +310,7 @@ def run_perception():
         cam = get_camera()
         cam.run()
     except Exception as e:
-        log.error(f"Perception Node failed: {e}")
+        log.exception(f"Perception Node failed: {e}")
         while True: time.sleep(10)
 
 
