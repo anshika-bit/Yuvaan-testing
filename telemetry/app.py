@@ -278,27 +278,6 @@ async def get_nav_state():
         "calibration_requested": current_nav_status.get("calibration_requested")
     }
 
-@app.post("/api/navigation/rtl")
-async def engage_rtl(lat: float, lng: float):
-    from core.navigation import get_nav_engine
-    nav = get_nav_engine()
-    
-    nav.stop() # Halt current navigation immediately
-    
-    rtl_waypoints = []
-    # If we have a history path, use it to safely backtrack
-    if hasattr(nav, 'history_path') and len(nav.history_path) > 0:
-        for point in reversed(nav.history_path):
-            rtl_waypoints.append({"lat": point['lat'], "lng": point['lng'], "action": "move"})
-            
-    # Finally, append the ultimate home target
-    rtl_waypoints.append({"lat": lat, "lng": lng, "action": "stop"})
-    
-    nav.set_waypoints(rtl_waypoints)
-    nav.start()
-    log.warning(f"RTL: Engaging protocol. Backtracking {len(rtl_waypoints)} waypoints to Base.")
-    return {"status": "ok"}
-
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry_endpoint(websocket: WebSocket):
     await websocket.accept()

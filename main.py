@@ -22,18 +22,21 @@ import sys
 import os
 import uvicorn
 
-# ---- Ensure project root is on sys.path for ALL child processes ----
-# multiprocessing.spawn (default on Python 3.12+) starts fresh interpreters
-# that may not have the project directory on sys.path.
+# ---- Project Root Path ----
 _PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
-if _PROJECT_ROOT not in sys.path:
-    sys.path.insert(0, _PROJECT_ROOT)
 
-# ---- Project Imports ----
-# NOTE: Hardware-dependent imports (IMUService, get_camera, get_gps_driver, CompassDriver)
-# are done LOCALLY inside each multiprocessing.Process function to avoid ImportError
-# at module load time when system libraries (smbus2, picamera2, etc.) aren't available
-# in the current Python path. Each process imports what it needs.
+def _ensure_project_path():
+    """Ensure the project root is on sys.path.
+    
+    Must be called at the START of every multiprocessing.Process target function.
+    Python 3.12+ child processes may not inherit the parent's sys.path.
+    """
+    if _PROJECT_ROOT not in sys.path:
+        sys.path.insert(0, _PROJECT_ROOT)
+    os.chdir(_PROJECT_ROOT)
+
+_ensure_project_path()  # Also run in the parent process
+
 import requests
 
 # ---- Logging ----
@@ -51,6 +54,7 @@ log = logging.getLogger("YUVAAN.LAUNCH")
 
 def run_api():
     """Process 1: FastAPI Telemetry Server (WebSocket + MJPEG endpoint)."""
+    _ensure_project_path()
     log.info("Starting Telemetry API on port 5000...")
     # Use string-based loading to avoid pickling issues with 'app' object in multiprocessing
     import uvicorn
@@ -59,6 +63,7 @@ def run_api():
 
 def run_sensors():
     """Consolidated Process: Handles IMU (20Hz) and GPS/Fusion (2Hz) to avoid I2C contention."""
+    _ensure_project_path()
     from telemetry.imu_service import IMUService
     from drivers.sensor_fusion import get_fusion_engine
     from drivers.gps_module import get_gps_driver
@@ -153,6 +158,24 @@ def run_sensors():
                             
                             if not remote_state.get('locked') and nav.emergency_locked:
                                 nav.unlock()
+                            
+                            # --- COMPASS CALIBRATION (triggered from GCS) ---
+                            if remote_state.get('calibration_requested'):
+                                log.info("COMPASS: Calibration request received from GCS. Starting hardware calibration...")
+                                try:
+                                    compass.calibrate(duration=30)
+                                    log.info("COMPASS: Hardware calibration COMPLETE.")
+                                except Exception as cal_err:
+                                    log.error(f"COMPASS: Calibration FAILED: {cal_err}")
+                                # Clear the flag so it doesn't re-trigger
+                                try:
+                                    requests.post(
+                                        "http://127.0.0.1:5000/api/navigation/update",
+                                        json={"calibration_requested": False},
+                                        timeout=0.1
+                                    )
+                                except Exception:
+                                    pass
                     else:
                         if tick % 100 == 0: log.warning(f"SYNC: GCS State unreachable (HTTP {state_resp.status_code})")
             except Exception as e:
@@ -280,6 +303,7 @@ def run_sensors():
 
 def run_perception():
     """Process 2: Camera Engine (IMX500 via picamera2)."""
+    _ensure_project_path()
     try:
         from perception.camera_engine import get_camera
         log.info("Initializing Camera Engine...")
