@@ -22,6 +22,13 @@ import sys
 import os
 import uvicorn
 
+# ---- Ensure project root is on sys.path for ALL child processes ----
+# multiprocessing.spawn (default on Python 3.12+) starts fresh interpreters
+# that may not have the project directory on sys.path.
+_PROJECT_ROOT = os.path.dirname(os.path.abspath(__file__))
+if _PROJECT_ROOT not in sys.path:
+    sys.path.insert(0, _PROJECT_ROOT)
+
 # ---- Project Imports ----
 # NOTE: Hardware-dependent imports (IMUService, get_camera, get_gps_driver, CompassDriver)
 # are done LOCALLY inside each multiprocessing.Process function to avoid ImportError
@@ -274,6 +281,7 @@ def run_sensors():
 def run_perception():
     """Process 2: Camera Engine (IMX500 via picamera2)."""
     try:
+        from perception.camera_engine import get_camera
         log.info("Initializing Camera Engine...")
         cam = get_camera()
         cam.run()
