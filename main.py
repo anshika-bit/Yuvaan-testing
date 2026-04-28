@@ -23,11 +23,10 @@ import os
 import uvicorn
 
 # ---- Project Imports ----
-# from telemetry.app import app # Removed to prevent circular import; uvicorn loads by string
-from telemetry.imu_service import IMUService
-from perception.camera_engine import get_camera
-from drivers.gps_module import get_gps_driver
-from drivers.compass import CompassDriver
+# NOTE: Hardware-dependent imports (IMUService, get_camera, get_gps_driver, CompassDriver)
+# are done LOCALLY inside each multiprocessing.Process function to avoid ImportError
+# at module load time when system libraries (smbus2, picamera2, etc.) aren't available
+# in the current Python path. Each process imports what it needs.
 import requests
 
 # ---- Logging ----
