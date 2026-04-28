@@ -325,7 +325,9 @@ def main():
 
     # Build process list
     api_process = multiprocessing.Process(target=run_api,        name="API_Server",  daemon=False)
-    cam_process = multiprocessing.Process(target=run_perception, name="Perception",  daemon=True)
+    # Picamera2/IMX500 may spawn helper child processes internally.
+    # A daemon multiprocessing.Process is forbidden from creating children.
+    cam_process = multiprocessing.Process(target=run_perception, name="Perception",  daemon=False)
     sns_process = multiprocessing.Process(target=run_sensors,    name="Sensors_Node", daemon=True)
 
     all_processes = [api_process, cam_process, sns_process]
@@ -382,6 +384,15 @@ def main():
 
     # Keep main alive until API process exits
     api_process.join()
+
+    # If the API exits unexpectedly, stop the remaining child processes too.
+    for p in (cam_process, sns_process):
+        try:
+            if p.is_alive():
+                p.terminate()
+                p.join(timeout=1)
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":
