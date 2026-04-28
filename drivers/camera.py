@@ -48,6 +48,8 @@ class CameraDriver:
         self.initialized = False
         self.last_error = None
         self.first_frame_time = None
+        self.last_frame_time = None
+        self._frame_seq = 0
 
         self._init_hardware()
 
@@ -178,8 +180,10 @@ class CameraDriver:
                 with self._lock:
                     self._latest_frame = frame
                     self._latest_dets = detections
+                    self._frame_seq += 1
                     if self.first_frame_time is None:
                         self.first_frame_time = time.time()
+                    self.last_frame_time = time.time()
                 self.last_error = None
 
             except Exception as e:
@@ -191,8 +195,8 @@ class CameraDriver:
         """Returns (frame, detections) — thread-safe snapshot."""
         with self._lock:
             if self._latest_frame is None:
-                return None, []
-            return self._latest_frame.copy(), self._latest_dets.copy()
+                return None, [], self._frame_seq
+            return self._latest_frame.copy(), self._latest_dets.copy(), self._frame_seq
 
     def stop(self):
         """Shutdown the camera driver cleanly."""

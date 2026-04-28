@@ -354,14 +354,18 @@ async def gen_frames_async():
     """
     last_real_frame_time = time.time()
     placeholder_sent = False
+    last_sent_mtime = None
     
     while True:
         try:
-            frame_bytes = await asyncio.to_thread(_read_frame_file)
-            if frame_bytes:
+            frame_payload = await asyncio.to_thread(_read_frame_file)
+            if frame_payload:
+                frame_bytes, frame_mtime = frame_payload
                 last_real_frame_time = time.time()
                 placeholder_sent = False
-                yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
+                if frame_mtime != last_sent_mtime:
+                    last_sent_mtime = frame_mtime
+                    yield (b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' + frame_bytes + b'\r\n')
             else:
                 # No frame available — check how long we've been without one
                 no_frame_duration = time.time() - last_real_frame_time
@@ -373,17 +377,18 @@ async def gen_frames_async():
                     log.warning("VIDEO: No camera frames for 3s. Sent placeholder to unblock frontend.")
         except Exception:
             pass
-        await asyncio.sleep(0.05)  # ~20fps cap, non-blocking
+        await asyncio.sleep(0.02)  # ~50Hz polling; yields only on new frame files
 
 def _read_frame_file():
     """Synchronous file read — called via asyncio.to_thread."""
     if not os.path.isfile(_FRAME_PATH):
         return None
     # Check file age; if older than 2s, camera might be dead
-    if time.time() - os.path.getmtime(_FRAME_PATH) > 2.0:
+    frame_mtime = os.path.getmtime(_FRAME_PATH)
+    if time.time() - frame_mtime > 2.0:
         return None
     with open(_FRAME_PATH, 'rb') as f:
-        return f.read()
+        return f.read(), frame_mtime
 
 def _read_camera_status_file():
     if not os.path.isfile(_CAMERA_STATUS_PATH):
