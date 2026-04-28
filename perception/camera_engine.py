@@ -17,6 +17,7 @@ _JPEG_QUALITY = 70
 _STATUS_REFRESH_SECONDS = 1.0
 _DETECTIONS_PUSH_INTERVAL = 0.2
 _DETECTIONS_POST_TIMEOUT = 0.1
+_DETECTION_OVERLAY_HOLD_SECONDS = 0.35
 
 class CameraEngine:
     """
@@ -31,6 +32,8 @@ class CameraEngine:
         self._last_status_write_at = 0.0
         self._last_frame_seq = -1
         self._last_detection_push_at = 0.0
+        self._last_visible_detections = []
+        self._last_detection_seen_at = 0.0
         
         # Ensure tmp directory exists
         os.makedirs("/tmp", exist_ok=True)
@@ -86,8 +89,18 @@ class CameraEngine:
                     continue
                 self._last_frame_seq = frame_seq
                 
+                now = time.time()
+                if detections:
+                    self._last_visible_detections = detections.copy()
+                    self._last_detection_seen_at = now
+                    display_detections = detections
+                elif (now - self._last_detection_seen_at) <= _DETECTION_OVERLAY_HOLD_SECONDS:
+                    display_detections = self._last_visible_detections
+                else:
+                    display_detections = []
+
                 # --- DRAW OVERLAYS (ONLY HUMANS) ---
-                for det in detections:
+                for det in display_detections:
                     x, y, w, h = det['box']
                     # Draw Blue Bounding Box (Mars Rover Theme)
                     cv2.rectangle(frame, (x, y), (x + w, y + h), (255, 100, 0), 2)
