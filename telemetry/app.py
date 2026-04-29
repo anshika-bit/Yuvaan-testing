@@ -230,11 +230,21 @@ async def manual_drive(data: DriveCommand):
 
 @app.get("/api/navigation/state")
 async def get_nav_state():
-    """Internal endpoint for Sensors process to sync state."""
+    """Internal endpoint for Sensors process to sync state.
+    
+    Uses current_nav_status (updated by telemetry/sync from the real sensor-side
+    engine) as source of truth for 'active'. Uses the API-process nav engine for
+    'waypoints' since those are pushed here directly by the GCS.
+    """
     from core.navigation import get_nav_engine
     nav = get_nav_engine()
+    
+    # 'active' from current_nav_status (sensor-side truth) if available,
+    # otherwise fall back to the API nav engine.
+    active = current_nav_status.get("active", nav.active)
+    
     return {
-        "active": nav.active,
+        "active": active,
         "locked": nav.emergency_locked,
         "waypoints": nav.waypoints,
         "manual_cmd": current_nav_status.get("manual_cmd"),
@@ -285,7 +295,7 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
                 "server_ts": int(time.time() * 1000)
             }
             await websocket.send_text(json.dumps(payload))
-            await asyncio.sleep(0.05)  # 20Hz WebSocket push (was 10Hz @ 0.1s)
+            await asyncio.sleep(0.1) 
     except WebSocketDisconnect:
         log.warning("GCS DISCONNECTED")
 
@@ -377,7 +387,7 @@ def _read_frame_file():
         return None
     # Check file age; if older than 2s, camera might be dead
     frame_mtime = os.path.getmtime(_FRAME_PATH)
-    if time.time() - frame_mtime > 1.0:  # 1s staleness (was 2s)
+    if time.time() - frame_mtime > 2.0:
         return None
     with open(_FRAME_PATH, 'rb') as f:
         return f.read(), frame_mtime
