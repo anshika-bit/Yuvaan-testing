@@ -82,7 +82,7 @@ class SensorFusion:
                 self.fused_lat += delta_lat
                 self.fused_lng += delta_lng
 
-        # 2. HEADING FUSION
+        # 2. HEADING FUSION (Velocity-Adaptive Complementary Filter)
         if imu_data.get('connected', True):
             gyro_z = imu_data.get('yaw_rate', 0)
             # INTEGRATION FIX: 
@@ -91,8 +91,21 @@ class SensorFusion:
             # We must SUBTRACT gyro_z to align with the compass direction.
             predicted_heading = self.fused_heading - (gyro_z * dt)
             
-            # Trust the Gyro 99% for short-term changes to ignore magnetic interference from motors
-            self.fused_heading = (0.99 * predicted_heading) + (0.01 * compass_heading)
+            # Adaptive compass weight:
+            #   - Stationary: motors off → no magnetic noise → trust compass more (15%)
+            #     This arrests gyro drift within ~0.5s of stopping rotation.
+            #   - Moving: motors running → magnetic interference → trust compass less (3%)
+            #     Still enough to prevent long-term drift on straight runs.
+            is_moving = self.velocity > 0.15
+            compass_weight = 0.03 if is_moving else 0.15
+            
+            # Wrap-safe blending: handle the 359°→1° boundary
+            diff = compass_heading - predicted_heading
+            # Normalize to [-180, 180]
+            if diff > 180: diff -= 360
+            elif diff < -180: diff += 360
+            
+            self.fused_heading = predicted_heading + (compass_weight * diff)
         else:
             self.fused_heading = compass_heading
         
