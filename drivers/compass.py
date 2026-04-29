@@ -63,15 +63,19 @@ class CompassDriver:
                 bus.write_byte_data(self.address, 0x01, 0xA0)
                 bus.write_byte_data(self.address, 0x02, 0x00)
             elif self.chip_type == "IST8310":
-                # Hard Soft Reset
+                # Soft Reset
                 bus.write_byte_data(self.address, 0x0B, 0x01)
                 time.sleep(0.1)
-                # Cross-axis calibration
+                # Cross-axis calibration (factory compensation)
                 bus.write_byte_data(self.address, 0x41, 0x24)
                 bus.write_byte_data(self.address, 0x42, 0x21)
-                # Continuous Mode 100Hz (0x08) instead of Single
-                bus.write_byte_data(self.address, 0x0A, 0x08)
-                time.sleep(0.05)
+                # Average 16 samples per measurement for noise reduction
+                bus.write_byte_data(self.address, 0x41, 0x24)
+                # Trigger first single measurement (0x01 to CNTL1)
+                # IST8310 does NOT have a true continuous mode.
+                # Each read must be preceded by a single-measurement trigger.
+                bus.write_byte_data(self.address, 0x0A, 0x01)
+                time.sleep(0.01)
         except Exception as e:
             log.error(f"COMPASS: Failed to initialize {self.chip_type}: {e}")
 
@@ -145,22 +149,26 @@ class CompassDriver:
                 y = self._to_int16(data[4], data[5])
             elif self.chip_type == "IST8310":
                 try:
-                    # Rely on Continuous Mode 100Hz set during init
+                    # IST8310 requires a single-measurement trigger before each read.
+                    # Write 0x01 to CNTL1 (reg 0x0A) to start a measurement, then
+                    # wait for conversion (~6ms at default ODR) before reading.
+                    bus.write_byte_data(self.address, 0x0A, 0x01)
+                    time.sleep(0.008)  # 8ms to be safe (spec says ~6.4ms)
                     data = bus.read_i2c_block_data(self.address, 0x03, 6)
                     x = self._to_int16(data[1], data[0])
                     y = self._to_int16(data[3], data[2])
                     z = self._to_int16(data[5], data[4])
                     return (x, y, z)
                 except Exception:
-                    # If read fails, try to reset mode to continuous silently
-                    try: bus.write_byte_data(self.address, 0x0A, 0x08)
+                    # If read fails, try to re-trigger silently
+                    try: bus.write_byte_data(self.address, 0x0A, 0x01)
                     except: pass
                     return None
             else: return None
             return (x, y, z)
         except Exception as e: 
             # On error, try to re-init mode silently
-            try: bus.write_byte_data(self.address, 0x0A, 0x08)
+            try: bus.write_byte_data(self.address, 0x0A, 0x01)
             except: pass
             log.error(f"COMPASS: General read error: {e}")
             return None
