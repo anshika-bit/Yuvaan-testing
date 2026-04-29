@@ -130,15 +130,14 @@ async def sync_all_telemetry(data: dict):
     if "gps" in data: current_gps_data.update(data["gps"])
     if "bridge" in data: current_bridge_data.update(data["bridge"])
     if "navigation" in data: 
-        # PROTECTION: Do not overwrite 'active' or 'waypoints' from telemetry
-        # These are driven by GCS requests. 
-        # We only take the 'real' state (distance, errors) from the backend.
+        # Forward ALL nav telemetry fields from the sensor process.
+        # We protect 'waypoints' and 'manual_cmd' (driven by GCS requests),
+        # but 'active' and 'state' come from the actual nav engine.
         nav_telemetry = data["navigation"]
-        current_nav_status["distance_to_wp"] = nav_telemetry.get("distance_to_wp", 0)
-        current_nav_status["target_bearing"] = nav_telemetry.get("target_bearing", 0)
-        current_nav_status["bearing_error"] = nav_telemetry.get("bearing_error", 0)
-        current_nav_status["current_wp"] = nav_telemetry.get("current_wp")
-        current_nav_status["state"] = nav_telemetry.get("state", "IDLE")
+        protected_keys = {"waypoints", "manual_cmd", "estop_requested", "calibration_requested"}
+        for k, v in nav_telemetry.items():
+            if k not in protected_keys:
+                current_nav_status[k] = v
     return {"status": "ok"}
 
 @app.post("/api/navigation/update")
@@ -240,8 +239,36 @@ async def get_nav_state():
         "waypoints": nav.waypoints,
         "manual_cmd": current_nav_status.get("manual_cmd"),
         "estop_requested": current_nav_status.get("estop_requested"),
-        "calibration_requested": current_nav_status.get("calibration_requested")
+        "calibration_requested": current_nav_status.get("calibration_requested"),
+        "detections": current_nav_status.get("detections", []),
+        "home_position": current_nav_status.get("home_position"),
     }
+
+@app.get("/api/navigation/config")
+async def get_nav_config():
+    """Returns the current live navigation configuration for field tuning."""
+    from core import nav_config
+    return {"status": "ok", "config": nav_config.get_config()}
+
+@app.post("/api/navigation/config")
+async def update_nav_config(data: dict):
+    """Live-update navigation parameters (PID gains, speeds, etc.) without restart."""
+    from core import nav_config
+    nav_config.update_config(data)
+    log.info(f"NAV_CONFIG: Updated {len(data)} parameters via API.")
+    return {"status": "ok", "config": nav_config.get_config()}
+
+@app.post("/api/navigation/home")
+async def set_home_position(data: dict):
+    """Set the home/base-station position for geofence enforcement.
+    Called by GCS when the user sets or changes the base station location."""
+    lat = data.get("lat")
+    lng = data.get("lng")
+    if lat is None or lng is None:
+        return {"status": "error", "message": "lat and lng required"}
+    current_nav_status["home_position"] = {"lat": float(lat), "lng": float(lng)}
+    log.info(f"NAV: Home position updated to {lat:.6f}, {lng:.6f}")
+    return {"status": "ok"}
 
 @app.websocket("/ws/telemetry")
 async def websocket_telemetry_endpoint(websocket: WebSocket):

@@ -71,6 +71,12 @@ def run_sensors():
     bridge = get_bridge()
     nav = get_nav_engine()
 
+    # Set home position for geofence checks
+    import os as _os
+    _home_lat = float(_os.environ.get("YUVAAN_BASE_LAT", "18.4485"))
+    _home_lng = float(_os.environ.get("YUVAAN_BASE_LNG", "77.4562"))
+    nav.set_home({"lat": _home_lat, "lng": _home_lng})
+
     log.info("Starting Sensors Calibration (keep rover still)...")
     imu_service.calibrate(samples=100)
     log.info("Sensors Node initialized and calibrated.")
@@ -138,6 +144,11 @@ def run_sensors():
 
                             if not remote_state.get("locked") and nav.emergency_locked:
                                 nav.unlock()
+
+                            # Sync home position from GCS for geofence
+                            remote_home = remote_state.get("home_position")
+                            if remote_home and remote_home.get("lat") and remote_home.get("lng"):
+                                nav.set_home(remote_home)
 
                             if remote_state.get("calibration_requested"):
                                 log.info("COMPASS: Calibration request received from GCS. Starting hardware calibration...")
@@ -209,7 +220,9 @@ def run_sensors():
             else:
                 if nav.active and not nav.emergency_locked:
                     prev_state = nav.state
-                    nav_status = nav.update(fused_data)
+                    # Pass detections for human-pause safety
+                    active_detections = remote_state.get("detections", [])
+                    nav_status = nav.update(fused_data, detections=active_detections)
                     if nav.state != prev_state:
                         log.info(f"NAV: State transition {prev_state} -> {nav.state}")
                 else:
