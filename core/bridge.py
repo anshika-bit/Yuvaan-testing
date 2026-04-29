@@ -150,9 +150,11 @@ class BridgeController:
                     self._last_r_enc = new_r
                 elif header == "MODE" and len(parts) >= 2:
                     new_mode = parts[1].strip().upper()
-                    if new_mode != self.telemetry["mode"]:
-                        log.info(f"BRIDGE: Hardware mode changed to {new_mode}")
-                    self.telemetry["mode"] = new_mode
+                    # Only accept valid mode values — reject corrupted serial fragments
+                    if new_mode in ("MAN", "AUT"):
+                        if new_mode != self.telemetry["mode"]:
+                            log.info(f"BRIDGE: Hardware mode changed to {new_mode}")
+                        self.telemetry["mode"] = new_mode
                 
                 self.telemetry["last_update"] = time.time()
                 

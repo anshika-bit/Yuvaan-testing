@@ -92,12 +92,12 @@ class SensorFusion:
             predicted_heading = self.fused_heading - (gyro_z * dt)
             
             # Adaptive compass weight:
-            #   - Stationary: motors off → no magnetic noise → trust compass more (15%)
-            #     This arrests gyro drift within ~0.5s of stopping rotation.
-            #   - Moving: motors running → magnetic interference → trust compass less (3%)
-            #     Still enough to prevent long-term drift on straight runs.
+            #   - Stationary: motors off → no magnetic noise → trust compass heavily (40%)
+            #     Rapid convergence to true magnetic heading when idle.
+            #   - Moving: motors running → magnetic interference → trust compass less (10%)
+            #     Still strong enough to prevent gyro drift on straight runs.
             is_moving = self.velocity > 0.15
-            compass_weight = 0.03 if is_moving else 0.15
+            compass_weight = 0.10 if is_moving else 0.40
             
             # Wrap-safe blending: handle the 359°→1° boundary
             diff = compass_heading - predicted_heading
