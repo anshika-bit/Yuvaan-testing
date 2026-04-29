@@ -119,10 +119,9 @@ def run_sensors():
                         # ── 1. Sync waypoints FIRST — before any start/stop ──
                         remote_wps = remote_state.get("waypoints", [])
                         if not hasattr(nav, "last_wps") or remote_wps != nav.last_wps:
-                            if remote_wps:
-                                log.info(f"NAV: Waypoints synced ({len(remote_wps)} points)")
-                                nav.set_waypoints(remote_wps)
-                                nav.last_wps = remote_wps.copy()
+                            log.info(f"NAV: Waypoints synced ({len(remote_wps)} points)")
+                            nav.set_waypoints(remote_wps)
+                            nav.last_wps = remote_wps.copy()
 
                         # ── 2. Hardware switch change has highest priority ──
                         if hw_changed:
@@ -149,7 +148,11 @@ def run_sensors():
 
                             # Sync home position from GCS for geofence
                             remote_home = remote_state.get("home_position")
-                            if remote_home and remote_home.get("lat") and remote_home.get("lng"):
+                            if (
+                                remote_home
+                                and remote_home.get("lat") is not None
+                                and remote_home.get("lng") is not None
+                            ):
                                 nav.set_home(remote_home)
 
                             if remote_state.get("calibration_requested"):
@@ -184,22 +187,6 @@ def run_sensors():
 
             fused_data = fusion.update(gps_raw, imu_data, mag_heading, bridge_data)
 
-            if time.time() - last_telemetry_time > 0.1:
-                # Stamp current engine state to avoid stale 'active: False'
-                # overwriting the API's 'active: True' set by /toggle
-                nav_status["active"] = nav.active
-                bulk_data = {
-                    "imu": imu_data,
-                    "gps": fused_data,
-                    "bridge": bridge_data,
-                    "navigation": nav_status,
-                }
-                try:
-                    requests.post(f"{api_url}/telemetry/sync", json=bulk_data, timeout=0.08)
-                    last_telemetry_time = time.time()
-                except Exception:
-                    pass
-
             manual_cmd = remote_state.get("manual_cmd")
             is_manual = (
                 manual_cmd
@@ -216,12 +203,12 @@ def run_sensors():
                     log.info("MANUAL OVERRIDE: Active command received. Halting navigation engine.")
 
                 if cmd_type == "MOVE":
-                    bridge.send_command("DRIVE", int(-val), int(val))
+                    bridge.send_command("DRIVE", int(val), int(val))
                 elif cmd_type == "TURN":
-                    speed = -val
-                    bridge.send_command("DRIVE", int(speed), int(speed))
+                    bridge.send_command("DRIVE", int(-val), int(val))
 
                 nav_status["state"] = "MANUAL_CONTROL"
+                nav_status["active"] = False
             else:
                 if nav.active and not nav.emergency_locked:
                     prev_state = nav.state
@@ -232,6 +219,7 @@ def run_sensors():
                         log.info(f"NAV: State transition {prev_state} -> {nav.state}")
                 else:
                     nav_status["state"] = "LOCKED" if nav.emergency_locked else "IDLE"
+                    nav_status["active"] = False
 
             if remote_state.get("estop_requested") and not nav.emergency_locked:
                 nav.stop(lock=True)
@@ -242,6 +230,20 @@ def run_sensors():
                     json={"estop_requested": False, "active": False, "locked": True},
                     timeout=0.1,
                 )
+
+            if time.time() - last_telemetry_time > 0.1:
+                nav_status["active"] = nav.active and not nav.emergency_locked
+                bulk_data = {
+                    "imu": imu_data,
+                    "gps": fused_data,
+                    "bridge": bridge_data,
+                    "navigation": nav_status,
+                }
+                try:
+                    requests.post(f"{api_url}/telemetry/sync", json=bulk_data, timeout=0.08)
+                    last_telemetry_time = time.time()
+                except Exception:
+                    pass
 
             if tick % 10 == 0:
                 hud = build_mission_control_screen(

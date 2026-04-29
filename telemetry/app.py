@@ -46,10 +46,12 @@ current_bridge_data = {
 }
 current_nav_status = {
     "active": False,
+    "locked": False,
     "distance_to_wp": 0.0,
     "target_bearing": 0.0,
     "bearing_error": 0.0,
     "current_wp": None,
+    "waypoints": [],
     "detections": []
 }
 
@@ -148,9 +150,12 @@ async def update_nav_status(data: dict):
 
 @app.post("/api/navigation/waypoints")
 async def set_waypoints(data: WaypointList):
+    global current_nav_status
     from core.navigation import get_nav_engine
     nav = get_nav_engine()
-    nav.set_waypoints([wp.dict() for wp in data.waypoints])
+    wp_list = [wp.dict() for wp in data.waypoints]
+    nav.set_waypoints(wp_list)
+    current_nav_status["waypoints"] = wp_list
     return {"status": "ok", "count": len(data.waypoints)}
 
 @app.get("/api/diagnostics/deep_scan")
@@ -182,6 +187,7 @@ async def calibrate_compass():
 
 @app.post("/api/navigation/toggle")
 async def toggle_navigation(active: bool):
+    global current_nav_status
     from core.navigation import get_nav_engine
     nav = get_nav_engine()
     if active: 
@@ -197,21 +203,26 @@ async def toggle_navigation(active: bool):
 
 @app.post("/api/navigation/estop")
 async def engage_estop():
+    global current_nav_status
     from core.navigation import get_nav_engine
     nav = get_nav_engine()
     nav.stop(lock=True) # Permanent lock until manual release or reboot
     
     # We set a flag so the Sensors process knows to send a physical STOP command
     current_nav_status["estop_requested"] = True
+    current_nav_status["locked"] = True
     
     log.error("ESTOP: Emergency Stop Triggered and System Locked!")
     return {"status": "ok", "locked": True}
 
 @app.post("/api/navigation/unlock")
 async def release_lock():
+    global current_nav_status
     from core.navigation import get_nav_engine
     nav = get_nav_engine()
     nav.unlock()
+    current_nav_status["locked"] = False
+    current_nav_status["estop_requested"] = False
     return {"status": "ok", "locked": False}
 
 @app.post("/api/navigation/rtl")
@@ -245,8 +256,8 @@ async def get_nav_state():
     
     return {
         "active": active,
-        "locked": nav.emergency_locked,
-        "waypoints": nav.waypoints,
+        "locked": current_nav_status.get("locked", nav.emergency_locked),
+        "waypoints": current_nav_status.get("waypoints", nav.waypoints),
         "manual_cmd": current_nav_status.get("manual_cmd"),
         "estop_requested": current_nav_status.get("estop_requested"),
         "calibration_requested": current_nav_status.get("calibration_requested"),

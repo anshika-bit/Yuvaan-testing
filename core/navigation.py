@@ -403,7 +403,7 @@ class NavigationEngine:
             action = target.get("action", "move").lower()
             if action in ["scan", "rotate 360"]:
                 if now - self.last_cmd_time < 4.5:
-                    self.bridge.send_command("DRIVE", -160, -160)
+                    self.bridge.send_command("DRIVE", -160, 160)
                     return self.status
                 else:
                     log.info(f"NAV: Scan complete for WP {self.current_wp_index}")
@@ -468,7 +468,7 @@ class NavigationEngine:
 
                 # Non-blocking recovery: enter STUCK_RECOVERY state
                 # instead of blocking with time.sleep()
-                self.bridge.send_command("DRIVE", 150, -150)  # Reverse
+                self.bridge.send_command("DRIVE", -150, -150)  # Reverse
                 self.state = "STUCK_RECOVERY"
                 self._recovery_start = time.time()
                 self._recovery_duration = cfg["stuck_recovery_reverse_time"]
@@ -514,9 +514,13 @@ class NavigationEngine:
             locked_error = get_bearing_error(curr_heading, t_head)
             turn_speed = self._get_turn_speed(locked_error)
 
-            # HARDWARE: Right turn (error > 0) → both negative
-            speed = -int(turn_speed) if locked_error > 0 else int(turn_speed)
-            self.bridge.send_command("DRIVE", speed, speed)
+            # Firmware contract: positive error means the target is to the right.
+            # A right spin is left-backward/right-forward.
+            if locked_error > 0:
+                l_speed, r_speed = -int(turn_speed), int(turn_speed)
+            else:
+                l_speed, r_speed = int(turn_speed), -int(turn_speed)
+            self.bridge.send_command("DRIVE", l_speed, r_speed)
             self.last_cmd_time = now
 
         elif self.state == "MOVING":
@@ -529,12 +533,13 @@ class NavigationEngine:
 
             self.status["pid_output"] = round(steer, 1)
 
-            l_speed = -int(target_speed) - steer
-            r_speed = int(target_speed) - steer
+            base_speed = int(target_speed)
+            l_speed = base_speed - steer
+            r_speed = base_speed + steer
 
-            # Clamp
-            l_speed = max(-255, min(-100, l_speed))
-            r_speed = max(100, min(255, r_speed))
+            # Forward drive is positive on both sides in the STM32 contract.
+            l_speed = max(-255, min(255, l_speed))
+            r_speed = max(-255, min(255, r_speed))
 
             self.bridge.send_command("DRIVE", l_speed, r_speed)
             self.last_cmd_time = now

@@ -119,13 +119,12 @@ class SensorFusion:
                 d_l = 0.0
                 d_r = 0.0
 
-            # SIGNED ODOMETRY: Forward is -L, +R in our wiring
-            dist_moved = (-d_l + d_r) / 2.0
+            # EncoderHandler normalizes the mirrored right side already,
+            # so straight forward motion is positive on both encoders.
+            dist_moved = (d_l + d_r) / 2.0
 
-            # DIFFERENTIAL HEADING: Δθ = (d_right - d_left) / wheelbase
-            # In our wiring: right encoder is positive-forward, left is negative-forward
-            # So effective: d_right_fwd = d_r, d_left_fwd = -d_l
-            d_left_fwd = -d_l
+            # Differential heading uses the normalized forward distances.
+            d_left_fwd = d_l
             d_right_fwd = d_r
             encoder_heading_delta = math.degrees(
                 (d_right_fwd - d_left_fwd) / wheelbase
