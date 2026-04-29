@@ -93,6 +93,7 @@ class NavigationEngine:
         self.stuck_timer = 0.0
         self.stuck_count = 0
         self.last_velocity = 0.0
+        self.last_update_time = 0.0
 
         # Human pause
         self.human_pause_active = False
@@ -296,6 +297,8 @@ class NavigationEngine:
         """
         cfg = nav_config.get_config()
         now = time.time()
+        dt = now - self.last_update_time if self.last_update_time > 0 else 0.05
+        self.last_update_time = now
 
         curr_lat = current_pos.get("lat")
         curr_lng = current_pos.get("lng")
@@ -500,7 +503,7 @@ class NavigationEngine:
 
         # ── STUCK DETECTION ──
         if self.state == "MOVING" and velocity < 0.05:
-            self.stuck_timer += 0.05  # ~dt at 20Hz
+            self.stuck_timer += dt
             if self.stuck_timer > cfg["stuck_timeout"]:
                 self.stuck_count += 1
                 log.error(f"NAV: STUCK DETECTED (attempt {self.stuck_count}/{cfg['stuck_max_retries']})")

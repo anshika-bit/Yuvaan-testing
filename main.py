@@ -118,7 +118,7 @@ def run_sensors():
 
                         # ── 1. Sync waypoints FIRST — before any start/stop ──
                         remote_wps = remote_state.get("waypoints", [])
-                        if not hasattr(nav, "last_wps") or remote_wps != nav.last_wps:
+                        if remote_wps and (not hasattr(nav, "last_wps") or remote_wps != nav.last_wps):
                             log.info(f"NAV: Waypoints synced ({len(remote_wps)} points)")
                             nav.set_waypoints(remote_wps)
                             nav.last_wps = remote_wps.copy()
@@ -144,6 +144,7 @@ def run_sensors():
                             # ── 3. GCS active request (only if HW didn't override) ──
                             if gcs_active and not nav.active and not nav.emergency_locked:
                                 nav.start()
+                                log.info(f"NAV_SYNC: start() called -> active={nav.active} wps={len(nav.waypoints)}")
                             elif not gcs_active and nav.active:
                                 nav.stop()
 
@@ -208,6 +209,10 @@ def run_sensors():
                 if nav.active:
                     nav.stop()
                     log.info("MANUAL OVERRIDE: Active command received. Halting navigation engine.")
+                    try:
+                        requests.post(f"{api_url}/navigation/update", json={"active": False}, timeout=0.05)
+                    except Exception:
+                        pass
 
                 if cmd_type == "MOVE":
                     bridge.send_command("DRIVE", int(val), int(val))
@@ -224,7 +229,17 @@ def run_sensors():
                     nav_status = nav.update(fused_data, detections=active_detections)
                     if nav.state != prev_state:
                         log.info(f"NAV: State transition {prev_state} -> {nav.state}")
+                    # If nav engine stopped itself (mission complete / abort),
+                    # clear the GCS active flag so sensor loop doesn't restart it.
+                    if not nav.active:
+                        try:
+                            requests.post(f"{api_url}/navigation/update", json={"active": False}, timeout=0.05)
+                        except Exception:
+                            pass
                 else:
+                    # Ensure motors stop when navigation is not active
+                    if nav_status.get("state") not in ("IDLE", "LOCKED", "MANUAL_CONTROL", None):
+                        bridge.send_command("STOP")
                     nav_status["state"] = "LOCKED" if nav.emergency_locked else "IDLE"
                     nav_status["active"] = False
 
@@ -239,7 +254,8 @@ def run_sensors():
                 )
 
             if time.time() - last_telemetry_time > 0.1:
-                nav_status["active"] = nav.active and not nav.emergency_locked
+                # Send as 'sensor_active' (not 'active') — 'active' is GCS-owned
+                nav_status["sensor_active"] = nav.active and not nav.emergency_locked
                 bulk_data = {
                     "imu": imu_data,
                     "gps": fused_data,

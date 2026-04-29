@@ -136,7 +136,7 @@ async def sync_all_telemetry(data: dict):
         # We protect 'waypoints' and 'manual_cmd' (driven by GCS requests),
         # but 'active' and 'state' come from the actual nav engine.
         nav_telemetry = data["navigation"]
-        protected_keys = {"waypoints", "manual_cmd", "estop_requested", "calibration_requested"}
+        protected_keys = {"waypoints", "manual_cmd", "estop_requested", "calibration_requested", "active"}
         for k, v in nav_telemetry.items():
             if k not in protected_keys:
                 current_nav_status[k] = v
@@ -250,9 +250,9 @@ async def get_nav_state():
     from core.navigation import get_nav_engine
     nav = get_nav_engine()
     
-    # 'active' from current_nav_status (sensor-side truth) if available,
-    # otherwise fall back to the API nav engine.
-    active = current_nav_status.get("active", nav.active)
+    # 'active' is the GCS-desired state (set by /toggle, protected from telemetry sync).
+    # The sensor reports its own state as 'sensor_active' via telemetry sync.
+    active = current_nav_status.get("active", False)
     
     return {
         "active": active,
