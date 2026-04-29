@@ -285,7 +285,7 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
                 "server_ts": int(time.time() * 1000)
             }
             await websocket.send_text(json.dumps(payload))
-            await asyncio.sleep(0.1) 
+            await asyncio.sleep(0.05)  # 20Hz WebSocket push (was 10Hz @ 0.1s)
     except WebSocketDisconnect:
         log.warning("GCS DISCONNECTED")
 
@@ -377,7 +377,7 @@ def _read_frame_file():
         return None
     # Check file age; if older than 2s, camera might be dead
     frame_mtime = os.path.getmtime(_FRAME_PATH)
-    if time.time() - frame_mtime > 2.0:
+    if time.time() - frame_mtime > 1.0:  # 1s staleness (was 2s)
         return None
     with open(_FRAME_PATH, 'rb') as f:
         return f.read(), frame_mtime

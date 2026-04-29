@@ -85,6 +85,7 @@ def run_sensors():
     last_gps_update = 0.0
     last_telemetry_time = 0.0
     imu_dt = 1.0 / 20.0
+    gps_poll_interval = 0.2   # 5Hz GPS polling (was 0.5s = 2Hz)
 
     tick = 0
     nav_status = {"state": "IDLE"}
@@ -105,10 +106,21 @@ def run_sensors():
                 imu_data = imu_service.imu.update()
 
                 if tick % 4 == 0:
-                    state_resp = requests.get(f"{api_url}/navigation/state", timeout=0.08)
+                    state_resp = requests.get(f"{api_url}/navigation/state", timeout=0.05)
                     if state_resp.ok:
                         remote_state = state_resp.json()
 
+                        # ── STEP 1: Sync waypoints FIRST (before active check) ──
+                        # This eliminates the race where nav.start() fires before
+                        # waypoints have been loaded into the local singleton.
+                        remote_wps = remote_state.get("waypoints", [])
+                        if not hasattr(nav, "last_wps") or remote_wps != nav.last_wps:
+                            if remote_wps:
+                                log.info(f"NAV: Waypoints synced ({len(remote_wps)} points)")
+                                nav.set_waypoints(remote_wps)
+                                nav.last_wps = remote_wps.copy()
+
+                        # ── STEP 2: Active/Mode sync ──
                         hw_mode = bridge_data.get("mode", "MAN")
                         gcs_active = remote_state.get("active", False)
 
@@ -127,21 +139,19 @@ def run_sensors():
                                 nav.stop()
                                 requests.post(f"{api_url}/navigation/toggle?active=false", timeout=0.05)
                         else:
+                            # Only start if sensor-local nav engine has waypoints loaded.
                             if gcs_active and not nav.active and not nav.emergency_locked:
-                                nav.start()
+                                if nav.waypoints:
+                                    nav.start()
+                                else:
+                                    if tick % 100 == 0:
+                                        log.debug("NAV: GCS says active but local engine has no waypoints yet. Waiting...")
                             elif not gcs_active and nav.active:
                                 nav.stop()
 
                         nav.last_hw_mode = hw_mode
 
                         if tick % 10 == 0:
-                            remote_wps = remote_state.get("waypoints", [])
-                            if not hasattr(nav, "last_wps") or remote_wps != nav.last_wps:
-                                if remote_wps:
-                                    log.info(f"NAV: Waypoints synced ({len(remote_wps)} points)")
-                                    nav.set_waypoints(remote_wps)
-                                    nav.last_wps = remote_wps.copy()
-
                             if not remote_state.get("locked") and nav.emergency_locked:
                                 nav.unlock()
 
@@ -172,7 +182,7 @@ def run_sensors():
                 if tick % 100 == 0:
                     log.debug(f"SYNC: GCS State polling failed: {sync_err}")
 
-            if time.time() - last_gps_update >= 0.5:
+            if time.time() - last_gps_update >= gps_poll_interval:
                 try:
                     gps_raw = gps.read()
                     mag_heading = compass.read_heading()
@@ -182,7 +192,7 @@ def run_sensors():
 
             fused_data = fusion.update(gps_raw, imu_data, mag_heading, bridge_data)
 
-            if time.time() - last_telemetry_time > 0.1:
+            if time.time() - last_telemetry_time > 0.05:
                 bulk_data = {
                     "imu": imu_data,
                     "gps": fused_data,
@@ -190,7 +200,7 @@ def run_sensors():
                     "navigation": nav_status,
                 }
                 try:
-                    requests.post(f"{api_url}/telemetry/sync", json=bulk_data, timeout=0.08)
+                    requests.post(f"{api_url}/telemetry/sync", json=bulk_data, timeout=0.05)
                     last_telemetry_time = time.time()
                 except Exception:
                     pass
