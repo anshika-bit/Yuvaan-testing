@@ -101,6 +101,7 @@ class NavigationEngine:
 
         # Geofence
         self.home_position = None
+        self.home_confirmed = False  # Only enforce geofence after GCS sets home
 
         # Status output
         self.status = {
@@ -187,9 +188,18 @@ class NavigationEngine:
         self.emergency_locked = False
         log.info("NAV: System Unlocked.")
 
-    def set_home(self, pos):
-        """Set the home position for geofence checks."""
+    def set_home(self, pos, confirmed=True):
+        """Set the home position for geofence checks.
+        
+        Args:
+            pos: dict with 'lat' and 'lng'
+            confirmed: if True (default, from GCS), geofence will be enforced.
+                      if False (auto-set from first GPS fix), geofence stays inactive.
+        """
         self.home_position = pos
+        if confirmed:
+            self.home_confirmed = True
+            log.info(f"NAV: Home confirmed at {pos['lat']:.6f}, {pos['lng']:.6f} — geofence active.")
 
     # ── RTL ──────────────────────────────────────────────────────────
     def engage_rtl(self, home_pos=None):
@@ -355,8 +365,8 @@ class NavigationEngine:
                 self.bridge.send_command("STOP")
                 return self.status
 
-        # ── Geofence check ──
-        if cfg["geofence_enabled"] and self.home_position:
+        # ── Geofence check (only if home confirmed by GCS) ──
+        if cfg["geofence_enabled"] and self.home_position and self.home_confirmed:
             dist_from_home = haversine_distance(
                 curr_lat, curr_lng, self.home_position["lat"], self.home_position["lng"]
             )

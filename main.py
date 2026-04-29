@@ -71,11 +71,9 @@ def run_sensors():
     bridge = get_bridge()
     nav = get_nav_engine()
 
-    # Set home position for geofence checks
-    import os as _os
-    _home_lat = float(_os.environ.get("YUVAAN_BASE_LAT", "18.4485"))
-    _home_lng = float(_os.environ.get("YUVAAN_BASE_LNG", "77.4562"))
-    nav.set_home({"lat": _home_lat, "lng": _home_lng})
+    # Home position starts unset — will be initialized from GPS on first fix,
+    # then overridden by GCS via /api/navigation/home.
+    # Geofence is not enforced until GCS confirms a home position.
 
     log.info("Starting Sensors Calibration (keep rover still)...")
     imu_service.calibrate(samples=100)
@@ -194,6 +192,18 @@ def run_sensors():
                     log.error(f"GPS Read Failure: {gps_err}")
 
             fused_data = fusion.update(gps_raw, imu_data, mag_heading, bridge_data)
+
+            # Auto-set home from first GPS fix (unconfirmed — geofence inactive)
+            if nav.home_position is None and fused_data.get("fix"):
+                nav.set_home(
+                    {"lat": fused_data["lat"], "lng": fused_data["lng"]},
+                    confirmed=False,
+                )
+                log.info(
+                    f"NAV: Auto-home set from GPS fix: "
+                    f"{fused_data['lat']:.6f}, {fused_data['lng']:.6f} "
+                    f"(geofence inactive until GCS confirms)"
+                )
 
             manual_cmd = remote_state.get("manual_cmd")
             is_manual = (
