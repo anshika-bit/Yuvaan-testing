@@ -145,6 +145,8 @@ def build_mission_control_screen(*, tick, bridge_data, gps_raw, fused_data, nav,
         f"HDG: {fmt_number(fused_heading, 1, '0.0')} deg",
         f" [GPS]     FIX: {gps_fix:<9} | SATS: {gps_raw.get('sats', 0):>2} | RAW LAT/LNG: "
         f"{fmt_coord(gps_raw.get('lat'))}, {fmt_coord(gps_raw.get('lng'))}",
+        f" [DEBUG]   SENSOR_ACTIVE: {str(nav.active):<5} | WPS: {len(getattr(nav, 'waypoints', [])):>2} | "
+        f"CUR_WP: {getattr(nav, 'current_wp_index', 0):>2} | LAST_CMD: {bridge_data.get('last_cmd') or 'n/a'}",
     ]
 
     if nav.active:

@@ -113,6 +113,38 @@ class NavigationEngine:
             "mode": "DIRECT", "pid_output": 0.0,
         }
 
+        # Throttled diagnostics for live field debugging
+        self._last_block_reason = None
+        self._last_block_log_at = 0.0
+        self._last_progress_log_at = 0.0
+        self._last_cmd_signature = None
+        self._last_cmd_log_at = 0.0
+
+    def _log_blocked(self, reason, now, detail=""):
+        if self._last_block_reason != reason or (now - self._last_block_log_at) > 2.0:
+            suffix = f" | {detail}" if detail else ""
+            log.warning(f"NAV_DEBUG: blocked={reason}{suffix}")
+            self._last_block_reason = reason
+            self._last_block_log_at = now
+
+    def _log_progress(self, now, *, dist, brg_error, velocity, curr_lat, curr_lng):
+        if now - self._last_progress_log_at >= 1.0:
+            log.info(
+                f"NAV_DEBUG: state={self.state} wp={self.current_wp_index + 1}/{len(self.waypoints)} "
+                f"dist={dist:.2f}m err={brg_error:.1f}deg vel={velocity:.2f} "
+                f"pos={curr_lat:.6f},{curr_lng:.6f}"
+            )
+            self._last_progress_log_at = now
+            self._last_block_reason = None
+
+    def _log_cmd(self, now, kind, left, right, detail=""):
+        signature = (kind, int(left), int(right), detail)
+        if self._last_cmd_signature != signature or (now - self._last_cmd_log_at) >= 1.0:
+            suffix = f" | {detail}" if detail else ""
+            log.info(f"NAV_CMD: {kind} L={int(left)} R={int(right)}{suffix}")
+            self._last_cmd_signature = signature
+            self._last_cmd_log_at = now
+
     # ── Waypoint Management ──────────────────────────────────────────
     def set_waypoints(self, wp_list):
         if self.emergency_locked:
@@ -296,6 +328,11 @@ class NavigationEngine:
             return self.status
 
         if curr_lat is None or curr_lng is None:
+            self._log_blocked(
+                "NO_POSITION",
+                now,
+                f"gps_fix={current_pos.get('fix', False)} gps_connected={current_pos.get('connected', False)}",
+            )
             return self.status
 
         # ── Terrain safety check ──
@@ -397,6 +434,14 @@ class NavigationEngine:
             "mode": nav_mode,
             "state": self.state,
         })
+        self._log_progress(
+            now,
+            dist=dist,
+            brg_error=brg_error,
+            velocity=velocity,
+            curr_lat=curr_lat,
+            curr_lng=curr_lng,
+        )
 
         # ── ACTION_WAIT state ──
         if self.state == "ACTION_WAIT":
@@ -520,6 +565,7 @@ class NavigationEngine:
                 l_speed, r_speed = -int(turn_speed), int(turn_speed)
             else:
                 l_speed, r_speed = int(turn_speed), -int(turn_speed)
+            self._log_cmd(now, "TURN", l_speed, r_speed, f"err={locked_error:.1f} dist={dist:.2f}")
             self.bridge.send_command("DRIVE", l_speed, r_speed)
             self.last_cmd_time = now
 
@@ -541,6 +587,7 @@ class NavigationEngine:
             l_speed = max(-255, min(255, l_speed))
             r_speed = max(-255, min(255, r_speed))
 
+            self._log_cmd(now, "MOVE", l_speed, r_speed, f"steer={steer} dist={dist:.2f}")
             self.bridge.send_command("DRIVE", l_speed, r_speed)
             self.last_cmd_time = now
 

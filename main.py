@@ -123,6 +123,13 @@ def run_sensors():
                             nav.set_waypoints(remote_wps)
                             nav.last_wps = remote_wps.copy()
 
+                        if tick % 40 == 0:
+                            log.info(
+                                f"SYNC_DEBUG: hw={hw_mode} gcs_active={gcs_active} "
+                                f"sensor_active={nav.active} locked={nav.emergency_locked} "
+                                f"wps={len(remote_wps)}"
+                            )
+
                         # ── 2. Hardware switch change has highest priority ──
                         if hw_changed:
                             if hw_mode == "AUT" and not nav.active:
