@@ -4,53 +4,18 @@ from pydantic import BaseModel
 import asyncio
 import json
 import os
-import sys
 import logging
 import time
-import math
 from contextlib import asynccontextmanager
-from datetime import datetime
 from fastapi.responses import StreamingResponse
+from runtime_logging import configure_runtime_logging, get_recent_runtime_logs
 
 # ---------------------------------------------------------
 # YUVAAN ROVER TELEMETRY BACKEND (Run this on the Pi 5)
 # ---------------------------------------------------------
 
-# ---- Clear Terminal on startup ----
-os.system('clear' if os.name == 'posix' else 'cls')
-
-# ---- Configure clean logging ----
-logging.basicConfig(
-    level=logging.INFO,
-    format="[%(asctime)s] %(levelname)s | %(message)s",
-    datefmt="%H:%M:%S"
-)
-log = logging.getLogger("YUVAAN")
-
-# ---- Memory Log Buffer for GCS ----
-class MemoryLogHandler(logging.Handler):
-    def __init__(self, limit=50):
-        super().__init__()
-        self.limit = limit
-        self.logs = []
-
-    def emit(self, record):
-        log_entry = {
-            "id": int(time.time() * 1000),
-            "timestamp": datetime.now().strftime("%H:%M:%S"),
-            "level": record.levelname,
-            "message": self.format(record)
-        }
-        self.logs.append(log_entry)
-        if len(self.logs) > self.limit:
-            self.logs.pop(0)
-
-    def get_logs(self):
-        return self.logs
-
-memory_log_handler = MemoryLogHandler()
-memory_log_handler.setFormatter(logging.Formatter('%(message)s'))
-logging.getLogger("YUVAAN").addHandler(memory_log_handler)
+configure_runtime_logging(console=False)
+log = logging.getLogger("YUVAAN.API")
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -289,7 +254,7 @@ async def websocket_telemetry_endpoint(websocket: WebSocket):
                 "gps": current_gps_data,
                 "bridge": current_bridge_data,
                 "navigation": current_nav_status,
-                "server_logs": memory_log_handler.get_logs(),
+                "server_logs": get_recent_runtime_logs(limit=80),
                 "server_ts": int(time.time() * 1000)
             }
             await websocket.send_text(json.dumps(payload))
