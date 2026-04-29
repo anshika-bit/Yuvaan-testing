@@ -61,13 +61,25 @@ _DEFAULTS = {
     "geofence_enabled": True,
     "geofence_radius": 200.0,    # meters from home position
 
-    # ── Sensor Fusion ──
+    # ── Sensor Fusion Weights ──────────────────────────────────────────
+    # TUNING GUIDE: The three weights (gyro + compass + encoder) are
+    # auto-normalized to 1.0. To change the compass:gyro ratio while
+    # keeping encoder fixed, just edit the two values below.
+    #
+    #   Current MOVING ratio  → compass 60%, gyro 40% (of non-encoder share)
+    #   encoder = 0.15  |  remaining 0.85 split 60/40
+    #   compass = 0.85 × 0.60 = 0.51
+    #   gyro    = 0.85 × 0.40 = 0.34
+    #
+    # For a 50/50 split: compass=0.425, gyro=0.425
+    # For a 70/30 split: compass=0.595, gyro=0.255
+    # ──────────────────────────────────────────────────────────────────
     "wheelbase": 0.50,           # meters — distance between left and right wheel centers
     "encoder_heading_weight_moving": 0.15,
     "encoder_heading_weight_stationary": 0.05,
-    "gyro_weight_moving": 0.75,
+    "gyro_weight_moving": 0.34,          # ← 40% of non-encoder share
     "gyro_weight_stationary": 0.50,
-    "compass_weight_moving": 0.10,
+    "compass_weight_moving": 0.51,       # ← 60% of non-encoder share
     "compass_weight_stationary": 0.45,
     "gps_outage_threshold": 5.0,     # seconds — pure DR mode after this
     "gps_reacquire_ramp_time": 3.0,  # seconds — slowly trust GPS again
