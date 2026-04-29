@@ -56,7 +56,7 @@ _DEFAULTS = {
     "stuck_timeout": 5.0,        # seconds — no encoder movement = stuck
     "stuck_recovery_reverse_time": 1.0,  # seconds to reverse during recovery
     "stuck_max_retries": 3,      # abort mission after this many consecutive stucks
-    "human_pause_enabled": True,
+    "human_pause_enabled": False,      # Set True to pause nav on human detection
     "human_pause_clear_time": 10.0,  # seconds of no detections before resuming
     "geofence_enabled": True,
     "geofence_radius": 200.0,    # meters from home position

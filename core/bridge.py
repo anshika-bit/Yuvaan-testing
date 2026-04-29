@@ -178,11 +178,12 @@ class BridgeController:
             # Normalize to integers to ensure STM32 parser compatibility
             v1, v2 = int(val1), int(val2)
 
-            # LEFT MOTOR INVERSION: The left drive motor is physically wired
-            # in reverse. Negate v1 (left) so that the rest of the codebase
-            # can use the intuitive convention (positive = forward).
+            # MOTOR WIRING CORRECTION: The L/R drive channels are swapped
+            # on the STM32, and one motor is physically inverted.
+            # Transform: (v1, v2) → (-v2, v1) so the rest of the codebase
+            # can use the intuitive convention (v1=left, v2=right, +=forward).
             if cmd_type == "DRIVE":
-                v1 = -v1
+                v1, v2 = -v2, v1
             
             # NO NEWLINE: STM32 parser uses '*' as the strict terminator
             packet = f"${cmd_type},{v1},{v2}*"
